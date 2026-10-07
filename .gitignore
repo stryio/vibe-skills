@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+voiceover.json
+.voiceover-manifest.json
+*.mp3
+*.srt

@@ -151,10 +151,13 @@ def cmd_init(src, out):
 
 # ---------------------------------------------------------------- 合成：一句一个文件，只重配改过的
 
-def tts(cfg, text, out):
+def tts(cfg, text, out, speed=1.0):
+    payload = {"text": text, "reference_id": cfg["FISH_REFERENCE_ID"], "format": "mp3"}
+    if speed != 1.0:
+        payload["prosody"] = {"speed": speed}  # 语速 0.5–2.0
     req = urllib.request.Request(
         cfg["FISH_API_BASE_URL"].rstrip("/") + "/v1/tts",
-        data=json.dumps({"text": text, "reference_id": cfg["FISH_REFERENCE_ID"], "format": "mp3"}, ensure_ascii=False).encode(),
+        data=json.dumps(payload, ensure_ascii=False).encode(),
         method="POST",
         headers={"Authorization": f"Bearer {cfg['FISH_API_KEY']}", "Content-Type": "application/json", "model": cfg["FISH_TTS_MODEL"]},
     )
@@ -171,7 +174,7 @@ def tts(cfg, text, out):
     out.write_bytes(audio)
 
 
-def cmd_synth(narration, outdir, force=False):
+def cmd_synth(narration, outdir, force=False, speed=1.0):
     cfg = config()
     outdir = Path(outdir)
     outdir.mkdir(parents=True, exist_ok=True)
@@ -180,13 +183,14 @@ def cmd_synth(narration, outdir, force=False):
     done, skipped = [], []
     for x in load_lines(narration):
         say = x.get("say") or auto_say(x["text"])
-        h = hashlib.sha1(f"{say}|{cfg['FISH_REFERENCE_ID']}|{cfg['FISH_TTS_MODEL']}".encode()).hexdigest()[:16]
+        sp = float(x.get("speed", speed))
+        h = hashlib.sha1(f"{say}|{cfg['FISH_REFERENCE_ID']}|{cfg['FISH_TTS_MODEL']}{'' if sp == 1.0 else f'|{sp}'}".encode()).hexdigest()[:16]
         f = outdir / f"{x['id']}.mp3"
         if f.is_file() and not force and manifest.get(x["id"], h) == h:
             manifest[x["id"]] = h
             skipped.append(x["id"])
             continue
-        tts(cfg, say, f)
+        tts(cfg, say, f, sp)
         manifest[x["id"]] = h
         mpath.write_text(json.dumps(manifest, indent=1))
         done.append(x["id"])
@@ -292,6 +296,7 @@ def main():
             b.add_argument("--gap", type=float, default=0.35, help="句间停顿（秒）")
         if name != "build":
             b.add_argument("--force", action="store_true", help="全部重新合成")
+            b.add_argument("--speed", type=float, default=1.0, help="整体语速 0.5–2.0（单句可在 narration.json 里写 speed）")
     args = p.parse_args()
     try:
         if args.cmd == "init":
@@ -304,7 +309,7 @@ def main():
             cmd_init(args.narration, narration)
         result = {}
         if args.cmd in ("synth", "run"):
-            result.update(cmd_synth(narration, args.out, args.force))
+            result.update(cmd_synth(narration, args.out, args.force, args.speed))
         if args.cmd in ("build", "run"):
             result.update(cmd_build(narration, args.out, args.gap))
         print(json.dumps(result, ensure_ascii=False))

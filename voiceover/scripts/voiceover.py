@@ -215,7 +215,10 @@ def measure(f):
     m = re.search(r"Duration: (\d+):(\d+):([\d.]+)", r.stderr)
     dur = int(m[1]) * 3600 + int(m[2]) * 60 + float(m[3])
     starts = [float(x) for x in re.findall(r"silence_start: ([\d.]+)", r.stderr)]
-    last = starts[-1] if starts else dur
+    ends = [float(x) for x in re.findall(r"silence_end: ([\d.]+)", r.stderr)]
+    # 最后一段静音要一直持续到文件结尾才算句尾；句中的停顿（后面还有话）不算
+    tail = starts and (len(ends) < len(starts) or ends[-1] >= dur - 0.05)
+    last = starts[-1] if tail else dur
     return dur, (last if last > dur - 1.2 else dur)
 
 
